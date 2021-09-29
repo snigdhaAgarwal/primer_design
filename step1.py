@@ -1,4 +1,6 @@
 import argparse
+import sys
+
 import requests
 import logging
 
@@ -6,7 +8,8 @@ from Bio.SeqFeature import SeqFeature
 from Bio.SeqFeature import FeatureLocation
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
-from Bio.Alphabet.IUPAC import IUPACUnambiguousDNA
+# from Bio.Data import IUPACData
+# from Bio.Alphabet.IUPAC import IUPACUnambiguousDNA
 
 import pandas as pd
 import numpy as np
@@ -48,7 +51,8 @@ def fetch_ensembl_transcript(ensembl_transcript_id, exon_annot = False):
     except requests.HTTPError:
         log.error("Ensembl sequence REST query returned error "
                   "{}".format(response.text))
-        raise ValueError(reponse.text)
+        return
+        # raise ValueError(response.text)
 
     response_data = response.json()
 
@@ -79,9 +83,10 @@ def fetch_ensembl_transcript(ensembl_transcript_id, exon_annot = False):
         log.error(e)
         log.error('Error parsing sequence metadata from Ensembl REST response - '
                   'did the format of the response change?')
-        raise ValueError(e)
+        return
+        # raise ValueError(e)
 
-    seq = Seq(seq_str, IUPACUnambiguousDNA())
+    seq = Seq(seq_str)#, IUPACData.unambiguous_dna_letters)
 
     record = SeqRecord(seq, id=sequence_id,
                        description=":".join(description))
@@ -97,7 +102,8 @@ def fetch_ensembl_transcript(ensembl_transcript_id, exon_annot = False):
         except requests.HTTPError:
             log.error("Ensembl sequence REST query returned error "
                       "{}".format(response.text))
-            raise ValueError(reponse.text)
+            return
+            # raise ValueError(response.text)
 
         response_data = response.json()
 
@@ -135,7 +141,8 @@ def fetch_ensembl_transcript(ensembl_transcript_id, exon_annot = False):
             log.error(e)
             log.error('Error parsing overlap metadata from Ensembl REST response - '
                       'did the format of the response change?')
-            raise ValueError(e)
+            return
+            # raise ValueError(e)
 
     record.annotations['reference_species'] = species
     record.annotations['reference_chromosome_number'] = chromosome_number
@@ -216,7 +223,7 @@ def fetch_ensembl_sequence(chromosome, region_left, region_right, expand = 200):
     if not r.ok:
         r.raise_for_status()
 
-    sequence = Seq(r.text, IUPACUnambiguousDNA())
+    sequence = Seq(r.text)#, IUPACUnambiguousDNA())
     return sequence
 
 def soft_match(ultramer, expanded_sequence):
@@ -266,7 +273,7 @@ def delimit_insertion(platepath):
     This converts protospacers and ultramers designed against gene transcripts into gene coordinate,
     which are to be fed into crispr-primer for primer design.
     '''
-    ultramersdf = pd.read_excel(platepath, index = None)
+    ultramersdf = pd.read_excel(platepath)
 
     assert {'transcript','gene','protospacer','Ultramer'}.issubset(set(ultramersdf.columns)),'excel header columns should include "transcript","gene","protospacer",and "Ultramer"'
 
@@ -284,58 +291,59 @@ def delimit_insertion(platepath):
             well = row['well']
 
             protospacer = row['protospacer']
-            protospacer = Seq(protospacer.upper(),IUPACUnambiguousDNA())
+            protospacer = Seq(protospacer.upper())#,IUPACUnambiguousDNA())
 
             ultramer = row['Ultramer']
-            ultramer = Seq(ultramer.upper(), IUPACUnambiguousDNA())
+            ultramer = Seq(ultramer.upper())#, IUPACUnambiguousDNA())
 
             record = fetch_ensembl_transcript(transcript)
 
-            chromosome, region_left, region_right = (record.annotations['reference_chromosome_number'],
-            record.annotations['reference_left_index'], record.annotations['reference_right_index'])
+            if record is not None:
+                chromosome, region_left, region_right = (record.annotations['reference_chromosome_number'],
+                record.annotations['reference_left_index'], record.annotations['reference_right_index'])
 
-            sequence = record.seq
-            expanded_sequence = fetch_ensembl_sequence(chromosome, region_left, region_right, expand)
+                sequence = record.seq
+                expanded_sequence = fetch_ensembl_sequence(chromosome, region_left, region_right, expand)
 
             #Note that expanded_sequence will always be in the direction of the reference genome, and has no
             #bearing on the strandedness of the transcript. To retrieve that information, use
             #record.annotations['transcript strand']
 
-            assert (protospacer in expanded_sequence) or (protospacer.reverse_complement() in expanded_sequence), f'{index} protospacer not found in transcript'
+                assert (protospacer in expanded_sequence) or (protospacer.reverse_complement() in expanded_sequence), f'{index} protospacer not found in transcript'
 
 
-            if -1 not in [expanded_sequence.find(ultramer[:25]), expanded_sequence.find(ultramer[-25:])]:
-                ult_range = [expanded_sequence.find(ultramer[:25]), expanded_sequence.find(ultramer[-25:])+25]
-            elif -1 not in [expanded_sequence.find(ultramer.reverse_complement()[:25]),
+                if -1 not in [expanded_sequence.find(ultramer[:25]), expanded_sequence.find(ultramer[-25:])]:
+                    ult_range = [expanded_sequence.find(ultramer[:25]), expanded_sequence.find(ultramer[-25:])+25]
+                elif -1 not in [expanded_sequence.find(ultramer.reverse_complement()[:25]),
                              expanded_sequence.find(ultramer.reverse_complement()[-25:])]:
-                ult_range = [expanded_sequence.find(ultramer.reverse_complement()[:25]),
+                    ult_range = [expanded_sequence.find(ultramer.reverse_complement()[:25]),
                              expanded_sequence.find(ultramer.reverse_complement()[-25:])+25]
-            else:
-                print(well, 'can\'t find 25bp ends of ultramer, trying 16')
-                if -1 not in [expanded_sequence.find(ultramer[:16]), expanded_sequence.find(ultramer[-16:])]:
-                    ult_range = [expanded_sequence.find(ultramer[:16]), expanded_sequence.find(ultramer[-16:])+16]
-                elif -1 not in [expanded_sequence.find(ultramer.reverse_complement()[:16]),
-                                 expanded_sequence.find(ultramer.reverse_complement()[-16:])]:
-                    ult_range = [expanded_sequence.find(ultramer.reverse_complement()[:16]),
-                                 expanded_sequence.find(ultramer.reverse_complement()[-16:])+16]
                 else:
-                    print(well, 'can\'t find 16bp ends of ultramer, looking for soft alignment')
-                    ult_range = soft_match(ultramer, expanded_sequence)
+                    print(well, 'can\'t find 25bp ends of ultramer, trying 16')
+                    if -1 not in [expanded_sequence.find(ultramer[:16]), expanded_sequence.find(ultramer[-16:])]:
+                        ult_range = [expanded_sequence.find(ultramer[:16]), expanded_sequence.find(ultramer[-16:])+16]
+                    elif -1 not in [expanded_sequence.find(ultramer.reverse_complement()[:16]),
+                                 expanded_sequence.find(ultramer.reverse_complement()[-16:])]:
+                        ult_range = [expanded_sequence.find(ultramer.reverse_complement()[:16]),
+                                 expanded_sequence.find(ultramer.reverse_complement()[-16:])+16]
+                    else:
+                        print(well, 'can\'t find 16bp ends of ultramer, looking for soft alignment')
+                        ult_range = soft_match(ultramer, expanded_sequence)
 
 
 
 
 
-            assert ult_range[1] - ult_range[0] in range(70,140), 'did we change the total length of homology arms?'
+                assert ult_range[1] - ult_range[0] in range(70,140), 'did we change the total length of homology arms?'
 
-            check_strand_consistency(well, expanded_sequence, protospacer, ultramer)
+                check_strand_consistency(well, expanded_sequence, protospacer, ultramer)
 
-            ultramer_range_left = region_left - expand + ult_range[0]
-            ultramer_range_right = region_left - expand + ult_range[1]
+                ultramer_range_left = region_left - expand + ult_range[0]
+                ultramer_range_right = region_left - expand + ult_range[1]
 
-            rowdf = pd.DataFrame([[well, chromosome, ultramer_range_left, ultramer_range_right, f'chr{chromosome}:{ultramer_range_left}-{ultramer_range_right}']],
+                rowdf = pd.DataFrame([[well, chromosome, ultramer_range_left, ultramer_range_right, f'chr{chromosome}:{ultramer_range_left}-{ultramer_range_right}']],
                                 columns = ['sample','chromosome','ultramer_range_left','ultramer_range_right','bed_range'])
-            platedf = platedf.append(rowdf)
+                platedf = platedf.append(rowdf)
 
         #added to search for Jin protospacers
         elif row['protospacer'] == row['protospacer']:
@@ -347,9 +355,9 @@ def delimit_insertion(platepath):
 
             query_results = fetch_gggenome_match(protospacer)
 
-            protospacer = Seq(protospacer.upper(),IUPACUnambiguousDNA())
+            protospacer = Seq(protospacer.upper())#,IUPACUnambiguousDNA())
             ultramer = row['Ultramer']
-            ultramer = Seq(ultramer.upper(), IUPACUnambiguousDNA())
+            ultramer = Seq(ultramer.upper())#, IUPACUnambiguousDNA())
 
             ult_range = []
             for query_result in query_results:
@@ -417,6 +425,6 @@ def check_strand_consistency(well, expanded_sequence, protospacer, ultramer):
         print(well, f"strandedness inconsistent")
 
 if __name__ == "__main__":
-    platedf = delimit_insertion(sys.argv[0])
-    platedf.to_csv('mNGplate_primers_in.csv',columns=['sample', 'bed_range'], header = None, index=None)
+    platedf = delimit_insertion(sys.argv[1])
+    platedf.to_csv('mNG plate_primers_in.csv',columns=['sample', 'bed_range'], header = None, index=None)
     
