@@ -4,3 +4,5 @@ numpy~=1.21.2
 Bio
 openpyxl
 flask
+boto3
+paramiko

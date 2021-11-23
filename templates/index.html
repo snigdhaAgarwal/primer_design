@@ -1,15 +1,56 @@
 <!doctype html>
 
 <head><title>Test</title>
-    <meta charset=utf-8> </head>
-    <body>
-        <h1>Primer Design</h1>
-        <form method=post enctype=multipart/form-data">
-            <input type=file name=file>
-            <input type=submit value="Upload and Delimit Insertion">
-        </form>
-<!--        <form action="/my-link/">-->
-<!--            <input type="submit" value="Delimit Insertion" />-->
-<!--        </form>-->
+    <meta charset=utf-8>
+    <style>
+.button {
+  background-color: #4CAF50;
+  border: none;
+  color: white;
+  padding: 15px 32px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  cursor: pointer;
+}
 
-    </body>
+</style>
+</head>
+{% extends "layout.html" %}
+{% block body %}
+        <h1>Primer Design</h1>
+        Detailed explanation of underlying code and each step can be found on this <a href="https://czbiohub.atlassian.net/wiki/spaces/MG/pages/1019871239/Commandline+primer3+primer+design+including+jasonprimer">page.</a>
+        <h2>Step 1: Find coordinates of insertion locations</h2>
+        To generate the coordinates we start with a file containing ultramer information.
+        The file should be an excel sheet with the following columns ('transcript','gene','protospacer','Ultramer'),
+        each corresponding to ENST-ID, gene name, the sequence of 20mer protospacer, and the sequence of designed
+        ultramer. Make sure there is no auxiliary information in the transcript column, and that the genename
+        doesn't have any poor formatting ('-' and '_' are okay; commas are not).
+        <pre></pre>
+        <form action="/" method="post" enctype="multipart/form-data">
+            <label for="xlsxfile"><i>Select the ultramer .xlsx file</i></label><br>
+            <input type="file" name="xlsxfile" id="xlsxfile"><br><br>
+            <input type="submit" class="button" value="Upload and Delimit Insertion">
+        </form>
+
+        <h2>Step 2: Generating CRISPR Primers</h2>
+        This section runs the code on AWS EC2 instance.
+        If you don't have an account on AWS yet, please contact Lekha Karanam. Once you get your account credentials,
+        login and <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey">create an access key</a>
+        as well as a <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html"> key pair</a>.
+        <b>NOTE!!! Save both the access key ID and Secret access key somewhere because you cannot access them again.</b>
+        While the key file allows one to connect to the EC2 instance, access keys allow the primer generating code to run on the AWS instance.
+        <pre></pre>
+        <form action="/aws" method="post" enctype="multipart/form-data">
+            <label for="pwd">AWS Access key ID:</label>
+            <input type="password" id="pwd" name="pwd" minlength="20"><br><br>
+            <label for="key">AWS Secret Access key:</label>
+            <input type="password" id="key" name="key" minlength="40"><br><br>
+            <label for="keyfile"><i>Select the key pair .pem file</i></label><br>
+            <input type="file" name="keyfile" id="keyfile"><br><br>
+            <input type="submit" class="button" value="Generate primers">
+        </form>
+
+{% endblock %}

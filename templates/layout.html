@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<head><title>Test</title>
+    <meta charset=utf-8>
+    <style>
+.warning {
+      background-color: #f89406;
+      border-color: #e96506;
+      color: #ffffff;
+    }
+}
+
+</style>
+</head>
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <div class="warning">
+    {% for message in messages %}
+      <li>{{ message }}</li>
+    {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+{% block body %}{% endblock %}
